@@ -1,0 +1,7 @@
+\section{Extra Credit: Using Dependency Labels in State Representations [20 points]}
+Dependency labels can be useful features when it comes to deciding actions. As an example, it is likely that a `det' relation does not repeat for a particular word if it already has an existing `det' relation in the dependencies set. For the extra credit, you need to find the leftmost and rightmost child of the top-2 elements of the stack. Include their respective embeddings in $w_{emb}$. Furthermore, extract the dependency labels corresponding to these child tokens. Construct an embedding for the labels with dimension $d_{lab}=50$ which gives label embeddings $l_{emb}$. Consequently, you will require a separate weight matrix for the dependency labels, say, $W_{lab}$. Therfore, equation \ref{eq:hid} will change to: 
+\begin{equation}
+    h_{rep}^{1\times h} = ReLU(w_{emb}^{1\times d_{emb}}.W_{tok}^{d_{emb}\times h} + p_{emb}^{1\times d_{pos}}.W_{pos}^{d_{pos}\times h} + l_{emb}^{1\times d_{lab}}.W_{lab}^{d_{lab}\times h} + b )
+    \label{eq:hid}
+\end{equation}
+Report results for any one GloVe embedding and input representation combination (i.e., Mean or Concatenate) for the above mentioned state representation.

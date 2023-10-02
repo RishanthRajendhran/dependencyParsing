@@ -1,0 +1,107 @@
+\section{Parser for Mini Project}
+In this mini project, you will be implementing a simpler variation of a transition-based dependency parser proposed by \citet{chen2014fast}. We describe the data files, helper methods, and the format of the submission file below. Next, we will describe the model to be implemented and its various test configurations.
+
+\subsection{Data Files}
+We provide you with the following data files:
+\begin{enumerate}
+    \item \textbf{data/\{train.txt, dev.txt, test.txt\}}:  These are the data splits that need to be used for training the model, hyper-parameter tuning and testing. The three files are formatted in the same fashion. They contain the input tokens, their part-of-speech~(POS) tags, and the gold shift-reduce actions. These three pieces are separated by \texttt{|||}. Each piece is further space-separated. Each line in the file corresponds to a sentence. As an example, here is how a line looks: \texttt{``The brown fox $|||$ DET ADJ NOUN $|||$ SHIFT SHIFT SHIFT REDUCE$\_$L$\_$amod REDUCE$\_$L$\_$det''}. \textcolor{red}{NOTE:} All trees in the files are strictly projective.
+    \item \textbf{data/hidden.txt}: This is another split formatted similar to the files mentioned above except it does not contain the gold actions. You are expected to submit actions predicted by your model for these sentences (more on this later). Hence  an example line in the file looks like: \texttt{``The brown fox $|||$ DET ADJ NOUN''}.  
+    \item \textbf{data/tagset.txt}: This contains the set of 75 possible actions that a model can predict separated by line. Each left reduce action with a relation label \emph{r} is written as \texttt{`REDUCE$\_$L$\_$r'} and, consequently, each right reduce action with a relation label \emph{r} is written as \texttt{`REDUCE$\_$R$\_$r'}.
+    \item \textbf{data/pos$\_$set.txt}: This contains the set of all 18 POS tags separated by line. While there are 17 official POS tags, we provide an addition \texttt{`NULL'} tag that can be used for any padding tokens.
+\end{enumerate}
+
+
+\subsection{Helper Methods}
+We provide you with two files that contain helper methods/skeleton codes. While we do not require you to use these files, we believe these will save you time:
+\begin{enumerate}
+    \item \textbf{scripts/state.py}: This file defines classes that might be useful to maintain state and implement state changes. Each method argument explicitly specifies the data type required. We provide three classes: 
+    \begin{inparaenum} 
+        \item Token. This creates an instance with a token, its POS tag, and a unique ID. 
+        \item DependencyEdge. This creates an edge instance defining the relation with the given relation label between a source (i.e., head) and target (i.e., dependent), both instances of class Token.
+        \item ParseState. This contains and maintains the parse state (stack, buffer, and dependency set) of the parser. 
+    \end{inparaenum}
+    In addition, this file contains skeleton code for methods that perform state changes. You can fill it with the necessary code. 
+    \item \textbf{scripts/evaluate.py}: This contains the helper method (\texttt{compute$\_$metrics()}) for evaluating the parser performance. It takes three lists of lists as input. These correspond to the token list, gold actions and predicted actions. Each inner list corresponds to a sentence. This method returns the UAS and LAS metrics for the data input. \textcolor{red}{\textbf{NOTE}}: This script relies on the methods in `state.py'. Please ensure that these methods are appropriately filled.
+\end{enumerate}
+
+\subsection{Output Format}
+You will be submitting a `results.txt' file with the predicted actions for the sentences in the `hidden.txt' file. Each action should be space-separated. The actions for different sentences must be in different lines. That is, the actions for a sentence on line \emph{k} in `hidden.txt` should be on line \emph{k} in `results.txt`.
+
+
+\subsection{Model and Configuration}
+As mentioned before, you will be implementing a simpler version of the parser proposed in \cite{chen2014fast}.
+\subsubsection{Model}
+ As mentioned before, a multi-class classifier is required to decide the action to be taken given a parse state. You will be training this classifier. Remember that the classifier takes some representation of the parse state as the input and produces an action. You will be using information from just the tokens and the POS tags to compute this representation. More specifically, you need to take the top \texttt{c=2} elements of the stack and buffer and their corresponding POS tags. We denote these as: 
+ \begin{align*}
+     w &= [stack_{-1},....,stack_{-c}, buffer_0, ...., buffer_{c-1}] \\
+     p &= [POS(stack_{-1}),....,POS(stack_{-c}), POS(buffer_0), ...., POS(buffer_{c-1})]
+ \end{align*}
+
+Note that you may need to pad the stack and buffer appropriately. You can use the pad (\texttt{[PAD]}) token with a POS tag \texttt{NULL}. 
+
+\paragraph{Embeddings.}
+Next, we need to convert these discrete words and POS tags to continuous embeddings. We will be using various versions of the pre-trained GloVe embeddings for the tokens. Note that GloVe embedding are static, i.e, they should not trained. For an embedding dimension $d_{emb}$, you'll get: 
+\begin{align*}
+    w_{emb}^{2c \times d_{emb}} = GloVe(w)
+\end{align*}
+
+The superscript shows the size of the tensor. GloVe embeddings are implemented in the \texttt{torchtext} library \footnote{\url{https://pytorch.org/text/stable/vocab.html\#torchtext.vocab.GloVe}}. For list of tokens, you can obtain the embeddings using the \texttt{get$\_$vecs$\_$by$\_$tokens} method \footnote{\url{https://pytorch.org/text/stable/vocab.html\#torchtext.vocab.Vectors.get_vecs_by_tokens}}. 
+
+You need to consider \textbf{two types of input representations} for token embeddings: 
+\begin{enumerate}[(a)]
+    \item Mean. All the embeddings of the $2c$ tokens are averaged. In this case, the size of the tensor will be $w_{emb}^{1\times d_{emb}}$. 
+    \item Concatenate. All the embeddings of the $2c$ tokens are concatenated. In this case, the size of the tensor will  be $w_{emb}^{1\times 2cd_{emb}}$ 
+\end{enumerate}
+
+We'll explain the model using the `Mean' representation going forward. \newline
+
+
+You need to embed the POS tags into continuous space as well. You need to use a trainable embedding to map POS tags to $d_{pos}$ sized embeddings. You can use the \texttt{torch.nn.Embedding} to achieve these embeddings. Hence, we can obtain POS embeddings ($p_{emb}$) by: 
+\begin{align*}
+    p_{emb}^{2c \times d_{pos}} = E_{pos}(p)
+\end{align*}
+As with tokens, you can take the mean or concatenate the POS embeddings. We will consider the mean for the sake of explanation.
+
+
+\paragraph{Linear Layer.}
+Next, we pass the embeddings through a linear layer in the following fashion:
+\begin{equation}
+    h_{rep}^{1\times h} = ReLU(w_{emb}^{1\times d_{emb}}.W_{tok}^{d_{emb}\times h} + p_{emb}^{1\times d_{pos}}.W_{pos}^{d_{pos}\times h} + b )
+    \label{eq:hid}
+\end{equation}
+where $W_{tok}$ and $W_{pos}$ are trainable weight matrices, and $h$ is the hidden dimension.
+
+\paragraph{Output.}
+The hidden representation is then passed through another linear layer and softmax to obtain the distribution over the actions. 
+\begin{equation}
+    y^{1\times |T|} = softmax(h_{rep}^{1\times h}.W_{out}^{h\times |T|} + b_{out} )
+\end{equation}
+where $T$ is the set of actions. 
+
+
+
+ \subsubsection{Parameters}
+ Here is a list of parameters and their values which 
+ \begin{enumerate}
+     \item c=2. Top-c elements from stack and buffer should be considered for representation. 
+     \item d$_{emb}$ = \{50, 300\}. You need to report results on four GloVE embeddings: \{``glove.6B.50d'', ``glove.6B.300d'', ``glove.42B.300d'',``glove.840B.300d''\}. 
+     \item d$_{pos}$ = 50. Embedding dimension for POS tags.
+     \item h = 200. The hidden dimension.
+     \item $|$T$|$ = 75. Number of distinct actions.
+     \item $|$P$|$ = 18. Number of distinct POS tags.
+ \end{enumerate}
+
+
+ \subsubsection{Hyper-Parameters}
+Just like the previous mini project, the only tunable hyper-parameter is the learning rate. Train your model using the following learning rates: \{0.01, 0.001, 0.0001\}. Run the training loop for a maximum of 20 epochs. The best model across learning rate and epochs is the one that gets the highest dev LAS metric. Feel free to choose the batch size. \textbf{Please fix the random seed in your implementation.}
+
+\subsubsection{Notes on Parser Implementation}
+Here are a few things to keep in mind when you implement the parser:
+\begin{enumerate}
+    \item Note that our final state condition that indicates the completion of our parsing process is slightly different than the convention. Conventionally, you check if the stack and buffer are empty and that marks the end of the parsing process. In our case, the final state will have one word on the stack and an empty buffer. 
+    \item Following up on the previous point, the one word which remains on the stack at the final state will be the root word of the sentence. Note that we have not given any \texttt{REDUCE} action with the `root' dependency label. This is due to the fact that, generally, reducing with a root relation is deterministic. \textcolor{red}{NOTE:} Do not add the \texttt{REDUCE$\_$R$\_$root} action in `results.txt' as the final action. The \texttt{compute$\_$metrics} method in `evaluate.py` adds it during evaluation.    
+    \item You need to handle cases when an illegal action is predicted. For example, you cannot \texttt{REDUCE} when there is only one word on the stack.
+\end{enumerate}
+
+\subsubsection{Benchmark Information}
+A training epoch roughly takes 30 seconds with a batch size of 64 on a Titan X machine. It requires roughly 8 GB of CPU RAM. You can specify it using the \texttt{--mem} flag in the Slurm script. This requires a maximum of 2GB GPU RAM. You can ask for a GPU by setting the \texttt{--gres=gpu:1} flag. 

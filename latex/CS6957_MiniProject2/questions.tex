@@ -1,0 +1,29 @@
+\section{What to Report}
+\begin{enumerate}
+    \item~[32 points] Implement the model and the parser. Submit the `results.txt' on Canvas as specified above. 
+    \item~[32 points] Provide the results of your parser on the test split by filling up Table \ref{tab:results}. Note that the model to compute these results on should be the model corresponding to the best learning rate and epoch as judged with respect to the dev split. The best learning rate and epoch should be determined by the LAS metric.
+
+    \begin{table}[h!]
+    \centering
+    \begin{tabular}{@{}lrr|rr@{}}
+   
+                                        & \multicolumn{2}{|c|}{\textbf{Mean}}                                   & \multicolumn{2}{c}{\textbf{Concatenate}}                            \\ \cmidrule(l){2-5} 
+\multicolumn{1}{l|}{\textbf{Embedding}} & \multicolumn{1}{c}{\textbf{UAS}} & \multicolumn{1}{c|}{\textbf{LAS}} & \multicolumn{1}{c}{\textbf{UAS}} & \multicolumn{1}{c}{\textbf{LAS}} \\ \midrule
+\multicolumn{1}{l|}{GloVe 6B 50d}       &                                  &                                   &                                  &                                  \\
+\multicolumn{1}{l|}{GloVe 6B 300d}      &                                  &                                   &                                  &                                  \\
+\multicolumn{1}{l|}{GloVe 42B 300d}     &                                  &                                   &                                  &                                  \\
+\multicolumn{1}{l|}{GloVe 840B 300d}    &                                  &                                   &                                  &                                  \\ \bottomrule
+\end{tabular}
+\caption{Experiment Results}
+\label{tab:results}
+\end{table}
+
+    \item~[6 points] Summarize the trends that you observe in your results in a few sentences.
+    \item~[15 points] Provide the dependency parse trees for the three sentences below. Use the best model from Table \ref{tab:results} to compute the parse.\footnote{You can use your favorite drawing tool~(e.g., \href{https://app.diagrams.net/}{draw.io}). There are more sophisticated tools for drawing dependency parses like \href{https://github.com/jonorthwash/ud-annotatrix}{UD Annotatrix} for the curious.}
+        \begin{enumerate}
+            \item Mary had a little lamb . (POS tags: PROPN AUX DET ADJ NOUN PUNCT)
+            \item I ate the fish raw . (POS tags: PRON VERB DET NOUN ADJ PUNCT)
+            \item With neural networks , I love solving problems . (POS tags: ADP ADJ NOUN PUNCT PRON VERB VERB NOUN PUNCT)
+        \end{enumerate}
+    \item~[15 points] Read \citet{chen2014fast}'s paper. We mentioned that we are using a simpler representation of the parse state as compared to the original paper. What are the differences between our representation and the representation used in the paper? Describe briefly. 
+\end{enumerate}
