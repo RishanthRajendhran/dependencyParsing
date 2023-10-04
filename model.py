@@ -14,6 +14,7 @@ from scripts.state import *
 from collections import deque
 from torchtext.vocab import GloVe
 import random
+from sklearn.utils import resample
 
 parser = argparse.ArgumentParser()
 
@@ -128,7 +129,7 @@ parser.add_argument(
     "-seed",
     type=int,
     help="Seed for torch/numpy",
-    default=13
+    default=34235
 )
 
 parser.add_argument(
@@ -142,7 +143,7 @@ parser.add_argument(
     "-batchSize",
     type=int,
     help="Batch size of dataloader",
-    default=256
+    default=64
 )
 
 parser.add_argument(
@@ -157,7 +158,7 @@ parser.add_argument(
     "-weightDecay",
     type=float,
     help="Weight Decay for optimizer",
-    default=0.01
+    default=0
 )
 
 parser.add_argument(
@@ -183,7 +184,26 @@ parser.add_argument(
     "-dropout",
     type=float,
     help="Dropout probability",
-    default=0.5
+    default=0
+)
+
+parser.add_argument(
+    "-optimizer",
+    choices=["adam", "adagrad"],
+    help="Choice of optimizer to use for training",
+    default="adagrad"
+)
+
+parser.add_argument(
+    "-amsgrad",
+    action="store_true",
+    help="Boolean flag to enable amsgrad in optimizer"
+)
+
+parser.add_argument(
+    "-lrScheduler",
+    action="store_true",
+    help="Boolean flag to employ learning rate scheduler during training"
 )
 #---------------------------------------------------------------------------
 def checkIfExists(path, isDir=False, createIfNotExists=False, error="checkIfExists"): 
@@ -277,13 +297,13 @@ def processData(extrData: List[dict], context: int=2, includeDep=False, error: s
             includeDep=includeDep
         )
         for action in data["actions"]:
-            takeAction(ps, action, error="processData")
             proData.append(ps.getRepr(context))
+            takeAction(ps, action, error="processData")
             proActions.append(action)
+        proData.append(ps.getRepr(context))
         takeAction(ps, "REDUCE_R_root", error="processData")
         if not is_final_state(ps, context):
             raise RuntimeError("[{}] Final state not reached after all actions: {}".format(error, ps.getRepr(context)))
-        proData.append(ps.getRepr(context))
         proActions.append("REDUCE_R_root")
     return proData, proActions
 #---------------------------------------------------------------------------
@@ -320,9 +340,8 @@ class Actor(torch.nn.Module):
         self.wordLayer = torch.nn.Linear(
             in_features=self.embedDim, 
             out_features=hiddenSize, 
+            bias=True
         )
-        
-        # self.wordBN = torch.nn.BatchNorm1d(self.hiddenSize)
 
         self.posEmbed = torch.nn.Embedding(
             num_embeddings=len(posToInd), 
@@ -333,9 +352,8 @@ class Actor(torch.nn.Module):
         self.posLayer = torch.nn.Linear(
             in_features=self.embedPosDim, 
             out_features=hiddenSize, 
+            bias=True
         )
-
-        # self.posBN = torch.nn.BatchNorm1d(self.hiddenSize)
 
         if includeDep:
             self.labelEmbed = torch.nn.Embedding(
@@ -346,6 +364,7 @@ class Actor(torch.nn.Module):
             self.labelLayer = torch.nn.Linear(
                 in_features=self.embedLabelDim, 
                 out_features=hiddenSize, 
+                bias=True
             )
 
         self.dropout = torch.nn.Dropout(p=dropout)
@@ -380,9 +399,8 @@ class Actor(torch.nn.Module):
         else: 
             raise ValueError("[Actor::forward] Unrecognized strategy: {}".format(self.strategy))
         if self.includeDep:
-            h = self.wordLayer(w) + self.posLayer(pEmbed) + self.labelLayer(lEmbed)
+            h = (self.wordLayer(w) + self.posLayer(pEmbed) + self.labelLayer(lEmbed))
         else: 
-            # h = torch.nn.ReLU()(self.wordBN(self.wordLayer(w)) + self.posBN(self.posLayer(pEmbed)))
             h = self.wordLayer(w) + self.posLayer(pEmbed)
         h = torch.nn.ReLU()(self.dropout(h))
         logits = self.classifier(h)
@@ -512,7 +530,6 @@ def createDataLoader(data, labels, labelToInd, posToInd, context, gloveName, glo
         batch_size=batchSize,
         num_workers=0,
         shuffle=True,
-        # shuffle=False,
         collate_fn=collateBatch(includeDep),
     )
 #---------------------------------------------------------------------------
@@ -535,9 +552,9 @@ def trainModel(model: Actor, dataLoader, lossFunction, optimizer, device, schedu
         numBatch += 1
         numExamples += len(Ws)
         if includeDep:
-            outputs, _ = model(Ws, Ps, Ls)
+            _, outputs = model(Ws, Ps, Ls)
         else:
-            outputs, _ = model(Ws, Ps)
+            _, outputs = model(Ws, Ps)
 
         labels = labels.to(device)
         
@@ -580,9 +597,9 @@ def evalModel(model, lossFunction, dataLoader, device="cpu", dataDesc="Test batc
             numBatch += 1
             numExamples += len(Ws)
             if includeDep:
-                outputs, _ = model(Ws, Ps, Ls)
+                _, outputs = model(Ws, Ps, Ls)
             else:
-                outputs, _ = model(Ws, Ps)
+                _, outputs = model(Ws, Ps)
             labels = labels.to(device)
             _, preds = torch.max(outputs, dim=-1)
 
@@ -797,9 +814,25 @@ def main():
         device = "cpu"
     logging.info("Using device:{}".format(device))
 
+
+    logging.info("Args: {}".format(args))
+
+    executed = False
+    datasetInst =  ActorDataset(
+        labelToInd,
+        posToInd,
+        args.context,
+        gloveName=args.gloveName,
+        gloveDim=args.gloveDim,
+        includeDep=args.includeDep,
+        depToInd=depToInd,
+    )
+
+    # saveModelAs = "{}model.pt".format(saveModelPath)
+    saveModelAs = "{}model_{}_{}_{}_{}.pt".format(saveModelPath, args.gloveName, args.gloveDim, args.strategy, args.includeDep)
     if args.load:
-        model = torch.load(f"{saveModelPath}model.pt")
-        logging.info("Loaded model from {}model.pt".format(saveModelPath)) 
+        model = torch.load(saveModelAs)
+        logging.info("Loaded model from {}".format(saveModelAs)) 
     else: 
         model = Actor(
             args.context, 
@@ -815,19 +848,8 @@ def main():
             args.embedLabel,
             args.dropout,
         )
+        logging.info("Created Actor model") 
 
-    logging.info("Args: {}".format(args))
-
-    executed = False
-    datasetInst =  ActorDataset(
-        labelToInd,
-        posToInd,
-        args.context,
-        gloveName=args.gloveName,
-        gloveDim=args.gloveDim,
-        includeDep=args.includeDep,
-        depToInd=depToInd,
-    )
     if args.train:
         numTrainingSteps = args.numEpochs * len(trainDataLoader)
         maxSteps = args.maxSteps
@@ -843,36 +865,56 @@ def main():
         bestValUAS = None
         bestValAcc = 0
         oriMaxSteps = maxSteps
-        # saveModelAs = "{}model.pt".format(saveModelPath)
-        saveModelAs = "{}model_{}_{}_{}_{}.pt".format(saveModelPath, args.gloveName, args.gloveDim, args.strategy, args.includeDep)
-        for learningRate in args.learningRate:
+        for i, learningRate in enumerate(args.learningRate):
+            if i:
+                if args.load:
+                    model = torch.load(saveModelAs)
+                    logging.info("Reloaded model from {}".format(saveModelAs)) 
+                else: 
+                    model = Actor(
+                        args.context, 
+                        args.gloveDim, 
+                        args.embedPos,
+                        args.hiddenDim, 
+                        posToInd, 
+                        labelToInd, 
+                        args.strategy, 
+                        device,
+                        args.includeDep,
+                        depToInd,
+                        args.embedLabel,
+                        args.dropout,
+                    )
+                    logging.info("Recreated Actor model") 
             logging.info("Learning Rate: {}".format(learningRate))
             maxSteps = oriMaxSteps
-            optimizer = torch.optim.Adam(
-                model.parameters(), 
-                lr=learningRate, 
-                weight_decay=args.weightDecay,
-                # amsgrad=True,
-            )
-            # optimizer = torch.optim.Adagrad(
-            #     model.parameters(), 
-            #     lr=learningRate, 
-            #     weight_decay=args.weightDecay,
-            #     # amsgrad=True,
-            # )
+            if args.optimizer == "adam":
+                optimizer = torch.optim.Adam(
+                    model.parameters(), 
+                    lr=learningRate, 
+                    weight_decay=args.weightDecay,
+                    amsgrad=args.amsgrad,
+                )
+            elif args.optimizer == "adagrad":
+                optimizer = torch.optim.Adagrad(
+                    model.parameters(), 
+                    lr=learningRate, 
+                    weight_decay=args.weightDecay,                
+                )
+            else:
+                raise ValueError("[main] Invalid input to -optimizer: {}".format(args.optimizer))
             totalSteps = args.numEpochs
-            scheduler = transformers.get_linear_schedule_with_warmup(
-                optimizer,
-                # num_warmup_steps=0.1*totalSteps,
-                # num_warmup_steps=2000,
-                num_warmup_steps=0,
-                num_training_steps=totalSteps
-            )
-            scheduler = None
-            weight=torch.ones(len(labelToInd))
-            #Downweight "shift" action to tackle data imbalance
-            weight[labelToInd["SHIFT"]] = 1/100
-            lossFunction = torch.nn.CrossEntropyLoss(weight=weight).to(device)
+            if args.lrScheduler:
+                scheduler = transformers.get_linear_schedule_with_warmup(
+                    optimizer,
+                    num_warmup_steps=0.1*totalSteps,
+                    # num_warmup_steps=2000,
+                    # num_warmup_steps=0,
+                    num_training_steps=totalSteps
+                )
+            else:
+                scheduler = None
+            lossFunction = torch.nn.CrossEntropyLoss().to(device)
             
             for epoch in range(args.numEpochs):
                 curAcc, curLoss = trainModel(

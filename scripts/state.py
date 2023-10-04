@@ -101,11 +101,11 @@ def isActionValid(state: ParseState, action: str, error: str="isActionValid"):
         return (len(state.parse_buffer)!=0)
     elif action.startswith("REDUCE_L"):
         if action == "REDUCE_L_root":
-            return (len(state.stack)>=2) and state.stack[-1].idx==-1 and (len(state.parse_buffer)==0)
+            return False
         return (len(state.stack)>=2) and state.stack[-2].idx!=-1 and state.stack[-1].idx!=-1
     elif action.startswith("REDUCE_R"):
         if action == "REDUCE_R_root":
-            return (len(state.stack)>=2) and state.stack[-2].idx==-1 and (len(state.parse_buffer)==0)
+            return (len(state.stack)==2) and state.stack[-2].idx==-1 and (len(state.parse_buffer)==0)
         return (len(state.stack)>=2) and state.stack[-2].idx!=-1 and state.stack[-1].idx!=-1
     else: 
         raise RuntimeError("[{}] Unrecognized action: {}".format(error, action))
